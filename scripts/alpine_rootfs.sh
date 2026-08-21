@@ -104,6 +104,13 @@ cp scripts/setup_ncm_gadget.sh ${CHROOT}/usr/local/bin/setup_ncm_gadget.sh
 cat << 'EOF' > ${CHROOT}/etc/udev/rules.d/10-udc.rules
 ACTION=="add", SUBSYSTEM=="udc", RUN+="/sbin/modprobe libcomposite", RUN+="/usr/local/bin/setup_ncm_gadget.sh"
 EOF
+# Bring usb0 up as soon as it appears. NetworkManager only autoconnects an
+# ethernet device once it has carrier, but a gadget interface only reports
+# carrier after it is administratively UP - without this the NCM link stays
+# down and the host always shows "not connected".
+cat << 'EOF' > ${CHROOT}/etc/udev/rules.d/11-usb0.rules
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="usb0", RUN+="/sbin/ip link set usb0 up"
+EOF
 
 # NetworkManager system connections: USB NCM (192.168.5.1/24 shared) and
 # WiFi hotspot (192.168.4.1/24 shared). LTE connection is intentionally absent
