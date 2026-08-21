@@ -49,7 +49,9 @@ apk add --allow-untrusted \
     iw \
     kmod \
     networkmanager \
+    networkmanager-dnsmasq \
     networkmanager-openrc \
+    networkmanager-wifi \
     openrc \
     wireless-regdb \
     wpa_supplicant
@@ -180,9 +182,10 @@ chroot ${CHROOT} rc-update add hostname boot
 chroot ${CHROOT} rc-update add bootmisc boot
 chroot ${CHROOT} rc-update add hwclock boot
 chroot ${CHROOT} rc-update add dbus default
+chroot ${CHROOT} rc-update add wpa_supplicant default
 chroot ${CHROOT} rc-update add local default
 chroot ${CHROOT} rc-update add dropbear default
-chroot ${CHROOT} rc-update add NetworkManager default
+chroot ${CHROOT} rc-update add networkmanager default
 
 # pre-generate dropbear host keys
 chroot ${CHROOT} /usr/sbin/dropbearkey -t rsa -s 2048 -f /etc/dropbear/dropbear_rsa_host_key 2>/dev/null
