@@ -1,26 +1,21 @@
 #!/bin/sh -e
 
-CHROOT=${CHROOT=$(pwd)/rootfs}
+# Package the Alpine rootfs into a sparse ext4 image (label "rootfs").
+# The device's ORIGINAL boot.img from the Debian flashing package is used as-is
+# and is flashed untouched; only the rootfs is replaced with this image.
 
-#package rootfs
-rm -f rootfs.raw boot.raw
+CHROOT=${CHROOT=$(pwd)/rootfs}
+ROOTFS_SIZE=${ROOTFS_SIZE=536870912} # 512MiB, resized to the full partition on first boot
+
+rm -f rootfs.raw
 mkdir -p files mnt
 
-# create boot
-truncate -s 67108864 boot.raw
-mkfs.ext2 boot.raw
-mount boot.raw mnt
-tar xf alpine_rootfs.tgz -C mnt ./boot --exclude='./boot/linux.efi' --strip-components=2
-umount mnt
-
-# create root img
-truncate -s 1610612736 rootfs.raw
-mkfs.ext4 rootfs.raw
+truncate -s ${ROOTFS_SIZE} rootfs.raw
+mkfs.ext4 -L rootfs rootfs.raw
 mount rootfs.raw mnt
-tar xpf alpine_rootfs.tgz -C mnt --exclude='./boot/*' --exclude='./root/*' --exclude='./dev/*'
+tar xpf alpine_rootfs.tgz -C mnt --exclude='./root/*' --exclude='./dev/*'
 
 umount mnt
 
-# create sparse android images 
+# create sparse android image
 img2simg rootfs.raw files/alpine_rootfs.bin
-img2simg boot.raw files/boot.bin

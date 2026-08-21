@@ -9,3 +9,8 @@ files
 mnt
 rootfs
 apk.static
+
+# prebuilt/<device> contains committed firmware/modules that must be pushed to the
+# repo so GitHub Actions can bake them into the rootfs
+!prebuilt/**/*.bin
+!prebuilt/**/*.mbn
