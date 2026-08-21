@@ -3,6 +3,9 @@ name: Build
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,8 +27,34 @@ jobs:
       - name: Create images
         run: sudo sh -e scripts/build_images.sh
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Package release assets
+        id: package
+        run: |
+          set -e
+          mkdir -p dist
+          # rootfs deliverable (flashes to the rootfs partition; keep the name
+          # consistent with the flashing package's rootfs.img)
+          cp files/alpine_rootfs.bin dist/SP970-alpine-rootfs.img
+          # bootloader / partition firmware (same as in the flashing package)
+          cp files/aboot.bin files/gpt_both0.bin files/hyp.mbn \
+             files/rpm.mbn files/sbl1.mbn files/tz.mbn dist/
+          echo "tag=SP970-r${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "assets=dist/*" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: SP970-alpine-rootfs
-          path: files/*
+          tag_name: ${{ steps.package.outputs.tag }}
+          name: SP970 Alpine ${{ steps.package.outputs.tag }}
+          body: |
+            Alpine rootfs for the SP970 (MSM8916) dongle.
+
+            - Flash with the device's Debian flashing package flash script.
+            - Replace its `rootfs.img` with `SP970-alpine-rootfs.img`, keep the
+              original `boot.img`.
+            - rootfs label `rootfs`, 512MiB, auto-resized on first boot.
+            - user: `root` / password: `password`
+            - USB NCM: 192.168.5.1/24 (device shows up as PID 0104)
+            - WiFi AP: `Openstick` / `12345678` (192.168.4.1/24)
+          files: ${{ steps.package.outputs.assets }}
+          fail_on_unmatched_files: true
