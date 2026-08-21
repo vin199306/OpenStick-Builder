@@ -111,6 +111,12 @@ EOF
 cat << 'EOF' > ${CHROOT}/etc/udev/rules.d/11-usb0.rules
 ACTION=="add", SUBSYSTEM=="net", KERNEL=="usb0", RUN+="/sbin/ip link set usb0 up"
 EOF
+# NetworkManager ships 85-nm-unmanaged.rules which marks every DEVTYPE=gadget
+# interface (NM_UNMANAGED=1) as unmanaged. Override it for usb0 (rule number
+# must be > 85 so it runs after) so NM actually configures the NCM link.
+cat << 'EOF' > ${CHROOT}/etc/udev/rules.d/90-nm-usb0.rules
+SUBSYSTEM=="net", KERNEL=="usb0", ENV{NM_UNMANAGED}="0"
+EOF
 
 # NetworkManager system connections: USB NCM (192.168.5.1/24 shared) and
 # WiFi hotspot (192.168.4.1/24 shared). LTE connection is intentionally absent
