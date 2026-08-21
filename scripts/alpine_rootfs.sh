@@ -187,10 +187,6 @@ chroot ${CHROOT} rc-update add local default
 chroot ${CHROOT} rc-update add dropbear default
 chroot ${CHROOT} rc-update add networkmanager default
 
-# pre-generate dropbear host keys
-chroot ${CHROOT} /usr/sbin/dropbearkey -t rsa -s 2048 -f /etc/dropbear/dropbear_rsa_host_key 2>/dev/null
-chroot ${CHROOT} /usr/sbin/dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key 2>/dev/null
-
 # backup rootfs
 rm -f alpine_rootfs.tgz
 tar cpzf alpine_rootfs.tgz \
