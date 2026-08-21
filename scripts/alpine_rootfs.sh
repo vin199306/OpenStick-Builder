@@ -57,6 +57,21 @@ apk add --allow-untrusted \
     wpa_supplicant
 "
 
+# postmarketOS packages (msm-firmware-loader, rmtfs). Kept as a guarded, last-
+# resort step on their own repo so a pmOS problem can never affect the core
+# image. rmtfs hard-depends on systemd-udevd, which is NOT in the Alpine v3.24
+# repos; if that (or any pmOS repo) cannot be resolved apk fails, so never let
+# it abort the build. This device has no SIM, so skipping rmtfs is non-fatal.
+cat << EOF >> ${CHROOT}/etc/apk/repositories
+http://mirror.postmarketos.org/postmarketos/v25.12
+EOF
+if chroot ${CHROOT} ash -l -c \
+      "apk update && apk add --allow-untrusted msm-firmware-loader msm-firmware-loader-openrc rmtfs rmtfs-openrc" 2>/dev/null; then
+    echo "postmarketos: msm-firmware-loader + rmtfs installed"
+else
+    echo "postmarketos: skipped (repo/deps not resolvable) -> core image unaffected"
+fi
+
 # UKI/initramfs style: the stock boot.img mounts the rootfs at '/' via the
 # bootloader-passed root parameter, so fstab only adds the configfs mount that
 # the USB NCM gadget (setup_ncm_gadget.sh) requires.
@@ -171,10 +186,12 @@ chmod +x ${CHROOT}/etc/local.d/cpufreq.start
 # enable services
 chroot ${CHROOT} rc-update add devfs sysinit
 chroot ${CHROOT} rc-update add dmesg sysinit
-chroot ${CHROOT} rc-update add udev sysinit
-chroot ${CHROOT} rc-update add udev-trigger sysinit
-chroot ${CHROOT} rc-update add udev-settle sysinit
-chroot ${CHROOT} rc-update add udev-postmount default
+# udev scripts may differ between eudev and systemd-udev; enable only what exists
+# so a udev implementation change (e.g. from rmtfs swapping eudev) never aborts.
+chroot ${CHROOT} sh -c '[ -e /etc/init.d/udev ]           && rc-update add udev           sysinit || true'
+chroot ${CHROOT} sh -c '[ -e /etc/init.d/udev-trigger ]   && rc-update add udev-trigger   sysinit || true'
+chroot ${CHROOT} sh -c '[ -e /etc/init.d/udev-settle ]    && rc-update add udev-settle    sysinit || true'
+chroot ${CHROOT} sh -c '[ -e /etc/init.d/udev-postmount ] && rc-update add udev-postmount default || true'
 chroot ${CHROOT} rc-update add sysctl boot
 chroot ${CHROOT} rc-update add localmount boot
 chroot ${CHROOT} rc-update add swap boot
@@ -186,6 +203,18 @@ chroot ${CHROOT} rc-update add wpa_supplicant default
 chroot ${CHROOT} rc-update add local default
 chroot ${CHROOT} rc-update add dropbear default
 chroot ${CHROOT} rc-update add networkmanager default
+
+# pre-generate dropbear host keys so the first boot has none to create.
+# dropbear installs its binaries under /usr/bin in Alpine, so locate it with
+# command -v; on any failure dropbear's own init script regenerates the keys on
+# first start (so a miss never aborts the build under set -e).
+chroot ${CHROOT} sh -c '
+    mkdir -p /etc/dropbear
+    if command -v dropbearkey >/dev/null 2>&1; then
+        dropbearkey -t rsa -s 2048     -f /etc/dropbear/dropbear_rsa_host_key      >/dev/null 2>&1 || true
+        dropbearkey -t ed25519         -f /etc/dropbear/dropbear_ed25519_host_key  >/dev/null 2>&1 || true
+    fi
+'
 
 # backup rootfs
 rm -f alpine_rootfs.tgz
