@@ -1,0 +1,82 @@
+name: Build SP970V11 Latest Kernel Alpine
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_version:
+        description: 'Kernel branch (msm8916-mainline)'
+        required: true
+        default: 'wip/msm8916/7.2-rc1'
+        type: choice
+        options:
+          - 'v6.12.1-msm8916'
+          - 'wip/msm8916/7.0'
+          - 'wip/msm8916/7.1-rc6'
+          - 'wip/msm8916/7.2-rc1'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo sh -e scripts/install_deps.sh
+          sudo apt-get install -y \
+            build-essential libncurses-dev libssl-dev bc flex bison \
+            mkbootimg cpio
+
+      - name: Extract MSM8916 firmware
+        run: sudo sh -e scripts/extract_fw.sh
+
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: msm8916-mainline/linux
+          ref: ${{ inputs.kernel_version }}
+          path: linux-src
+
+      - name: Build kernel + boot.img
+        run: sudo sh -e scripts/build_kernel_sp970v11.sh
+
+      - name: Create rootfs
+        run: sudo sh -e scripts/alpine_rootfs_sp970v11.sh
+
+      - name: Create images
+        run: sudo sh -e scripts/build_images.sh
+
+      - name: Package release assets
+        id: package
+        run: |
+          set -e
+          mkdir -p dist
+          # mainline kernel boot.img (flashes to the boot partition)
+          cp files/boot.img dist/boot.img
+          # alpine rootfs (flashes to the rootfs partition)
+          cp files/alpine_rootfs.bin dist/SP970V11-alpine-rootfs.img
+          # bootloader / partition firmware (same as in the flashing package)
+          cp files/aboot.bin files/gpt_both0.bin files/hyp.mbn \
+             files/rpm.mbn files/sbl1.mbn files/tz.mbn dist/
+          echo "tag=SP970V11-r${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "assets=dist/*" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.package.outputs.tag }}
+          name: SP970V11 Alpine (mainline kernel) ${{ steps.package.outputs.tag }}
+          body: |
+            Alpine + latest msm8916-mainline kernel for the SP970V11.
+
+            - `boot.img`: mainline kernel + SP970V11 device tree (stock aboot compatible)
+            - `SP970V11-alpine-rootfs.img`: Alpine rootfs, label `rootfs`, auto-resized on first boot
+            - user: `root` / password: `aa154236`
+            - USB NCM: 192.168.5.1/24
+            - WiFi AP: `Openstick` / `12345678` (192.168.4.1/24)
+          files: ${{ steps.package.outputs.assets }}
+          fail_on_unmatched_files: true

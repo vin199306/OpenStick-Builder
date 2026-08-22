@@ -57,6 +57,42 @@ The generated firmware files will be stored under the `files` directory
 ## Customizations
 Edit [`scripts/alpine_rootfs.sh`](scripts/alpine_rootfs.sh#L33) to add/remove packages.
 
+## SP970V11: Build a Latest Mainline Kernel Alpine Image
+This builder also ships a second workflow that compiles the **latest
+msm8916-mainline kernel** (instead of reusing the stock kernel) and packages a
+new `boot.img` for the **SP970V11** device.
+
+### What it produces
+- `boot.img` — mainline kernel (`Image.gz` + SP970V11 device tree), packed in
+  the Android boot image format the stock aboot loads (pagesize 2048,
+  base 0x80000000, offsets identical to the original boot.img).
+- `SP970V11-alpine-rootfs.img` — Alpine rootfs (label `rootfs`, 512MiB sparse
+  ext4, auto-resized on first boot) with the freshly built kernel modules.
+- `aboot.bin`, `gpt_both0.bin`, `hyp.mbn`, `rpm.mbn`, `sbl1.mbn`, `tz.mbn` —
+  unchanged bootloader / partition firmware from the flashing package.
+
+### How to trigger
+1. Fork this repo.
+2. Run the [Build SP970V11 workflow](../../actions/workflows/build-sp970v11.yml).
+3. Pick the kernel branch (default `wip/msm8916/7.2-rc1`, the latest
+   msm8916-mainline development branch).
+4. Download the release assets and flash with the device's flashing package
+   script (replace its `boot.img` and `rootfs.img`).
+
+### Key files
+| File | Purpose |
+| ---- | ------- |
+| `dtbs/msm8916-gexing-sp970v11.dts` | SP970V11 board device tree (GPIO layout) |
+| `dtbs/msm8916-sp970.dtsi` | shared SP970 base device tree (UART, eMMC, WiFi) |
+| `configs/kernel-sp970v11.config` | kernel feature fragment (zram, USB NCM, WireGuard, …) |
+| `scripts/build_kernel_sp970v11.sh` | compile kernel + dtb + modules, pack boot.img |
+| `scripts/alpine_rootfs_sp970v11.sh` | build Alpine rootfs with the new kernel modules |
+
+> [!NOTE]
+> The stock-kernel build (`build.yml` / `scripts/alpine_rootfs.sh`) keeps using
+> the original `boot.img` from the flashing package; only the SP970V11 workflow
+> replaces `boot.img` with the mainline kernel build.
+
 ## Firmware Installation
 > [!WARNING]  
 > The following commands can potentially brick your device, making it unbootable. Proceed with caution and at your own risk!

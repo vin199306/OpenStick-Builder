@@ -1,10 +1,9 @@
 #!/bin/sh -e
 
-# Build a minimal Alpine rootfs for the SP970 (MSM8916) dongle using the STOCK
-# kernel and firmware extracted from the device's Debian flashing package.
-#
-# The stock boot.img (from the flashing package) is used as-is; this script only
-# produces the rootfs that boot.img mounts as "/".
+# Build an Alpine rootfs for the SP970V11 running the freshly compiled
+# msm8916-mainline kernel (see build_kernel_sp970v11.sh). Kernel modules come
+# from the build staging dir, WiFi/firmware from prebuilt/SP970 (generic for
+# the MSM8916 SoC, independent of kernel version).
 
 export CHROOT=${CHROOT=$(pwd)/rootfs}
 export HOST_NAME=${HOST_NAME=OpenStick}
@@ -15,7 +14,11 @@ export APK_STATIC_URL=https://gitlab.alpinelinux.org/api/v4/projects/5/packages/
 
 DEVICE=${DEVICE=SP970}
 PREBUILT=${PREBUILT=$(pwd)/prebuilt/${DEVICE}}
-KVER=5.15.0-handsomekernel+
+MODULES_DIR=${MODULES_DIR=$(pwd)/modules}
+
+# kernel version is derived from the freshly built modules staging dir
+KVER=$(ls ${MODULES_DIR}/lib/modules/ | head -1)
+[ -n "${KVER}" ] || { echo "no modules staged in ${MODULES_DIR}"; exit 1; }
 
 rm -rf ${CHROOT}
 mkdir -p ${CHROOT}/etc/apk
@@ -58,11 +61,8 @@ apk add --allow-untrusted \
     wpa_supplicant
 "
 
-# postmarketOS packages (msm-firmware-loader, rmtfs). Kept as a guarded, last-
-# resort step on their own repo so a pmOS problem can never affect the core
-# image. rmtfs hard-depends on systemd-udevd, which is NOT in the Alpine v3.24
-# repos; if that (or any pmOS repo) cannot be resolved apk fails, so never let
-# it abort the build. This device has no SIM, so skipping rmtfs is non-fatal.
+# postmarketOS packages (msm-firmware-loader, rmtfs). Guarded, last-resort step
+# on their own repo so a pmOS problem can never abort the core image.
 cat << EOF >> ${CHROOT}/etc/apk/repositories
 http://mirror.postmarketos.org/postmarketos/v25.12
 EOF
@@ -73,8 +73,7 @@ else
     echo "postmarketos: skipped (repo/deps not resolvable) -> core image unaffected"
 fi
 
-# UKI/initramfs style: the stock boot.img mounts the rootfs at '/' via the
-# bootloader-passed root parameter, so fstab only adds the configfs mount that
+# the boot.img passes root=LABEL=rootfs; fstab only adds the configfs mount that
 # the USB NCM gadget (setup_ncm_gadget.sh) requires.
 cat << 'EOF' > ${CHROOT}/etc/fstab
 configfs /sys/kernel/config configfs nodev,noexec,nosuid 0 0
@@ -87,9 +86,9 @@ sed -i "/localhost/ s/\$/ ${HOST_NAME}/" ${CHROOT}/etc/hosts
 # root password
 chroot ${CHROOT} ash -l -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
 
-# install stock kernel modules and wifi firmware
+# install freshly built kernel modules + generic wifi firmware
 mkdir -p ${CHROOT}/lib/modules ${CHROOT}/lib/firmware
-cp -a ${PREBUILT}/lib/modules/. ${CHROOT}/lib/modules/
+cp -a ${MODULES_DIR}/lib/modules/. ${CHROOT}/lib/modules/
 cp -a ${PREBUILT}/lib/firmware/. ${CHROOT}/lib/firmware/
 
 # rebuild module dependency db inside the chroot
@@ -200,8 +199,6 @@ chmod +x ${CHROOT}/etc/local.d/cpufreq.start
 # enable services
 chroot ${CHROOT} rc-update add devfs sysinit
 chroot ${CHROOT} rc-update add dmesg sysinit
-# udev scripts may differ between eudev and systemd-udev; enable only what exists
-# so a udev implementation change (e.g. from rmtfs swapping eudev) never aborts.
 chroot ${CHROOT} sh -c '[ -e /etc/init.d/udev ]           && rc-update add udev           sysinit || true'
 chroot ${CHROOT} sh -c '[ -e /etc/init.d/udev-trigger ]   && rc-update add udev-trigger   sysinit || true'
 chroot ${CHROOT} sh -c '[ -e /etc/init.d/udev-settle ]    && rc-update add udev-settle    sysinit || true'
@@ -219,9 +216,6 @@ chroot ${CHROOT} rc-update add dropbear default
 chroot ${CHROOT} rc-update add networkmanager default
 
 # pre-generate dropbear host keys so the first boot has none to create.
-# dropbear installs its binaries under /usr/bin in Alpine, so locate it with
-# command -v; on any failure dropbear's own init script regenerates the keys on
-# first start (so a miss never aborts the build under set -e).
 chroot ${CHROOT} sh -c '
     mkdir -p /etc/dropbear
     if command -v dropbearkey >/dev/null 2>&1; then
