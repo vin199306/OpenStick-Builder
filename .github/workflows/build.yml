@@ -1,0 +1,26 @@
+name: Build SP970V11 Alpine
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo sh -e scripts/install_deps.sh
+
+      - name: Create rootfs
+        run: sudo sh -e scripts/alpine_rootfs.sh
+
+      - name: Create images
+        run: sudo sh -e scripts/build_images.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SP970V11-alpine
+          path: files/*
