@@ -102,12 +102,17 @@ rc-update add rmtfs default
 rc-update add networkmanager default
 rc-update add networkmanager-dispatcher default
 rc-update add wpa_supplicant default
+rc-update add chronyd default
 rc-update add local default
 "
 echo 'user ALL=(ALL:ALL) NOPASSWD: ALL' > ${CHROOT}/etc/sudoers.d/user
 
 # root password
 chroot ${CHROOT} ash -l -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
+
+# configure chrony with domestic NTP servers (device clock resets to 1970 without RTC,
+# causing TLS cert verification failures; default config already has makestep 1.0 3 + rtcsync)
+sed -i 's|^pool pool.ntp.org iburst|server ntp.aliyun.com iburst\nserver ntp.tencent.com iburst\nserver cn.pool.ntp.org iburst|' ${CHROOT}/etc/chrony/chrony.conf
 
 # add udev rules
 cat << EOF > ${CHROOT}/etc/udev/rules.d/10-udc.rules
