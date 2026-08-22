@@ -3,6 +3,9 @@ name: Build SP970V11 Alpine
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,3 +27,24 @@ jobs:
         with:
           name: SP970V11-alpine
           path: files/*
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: SP970V11-r${{ github.run_number }}
+          files: |
+            files/SP970V11-alpine-rootfs.img
+            prebuilt/SP970V11/aboot.mbn
+          body: |
+            SP970V11 Alpine rootfs 构建产物
+
+            - `SP970V11-alpine-rootfs.img`: Alpine rootfs（512MB ext4，label rootfs，sparse）
+            - `aboot.mbn`: 新版 aboot（刷机前必须更新，旧版有 bug）
+
+            boot.img 由刷机包提供，本仓库不构建。
+
+            系统配置：
+            - 主机名: OpenStick
+            - root 密码: password
+            - USB NCM: 192.168.5.1/24
+            - WiFi 热点: Openstick / 12345678 (192.168.4.1/24)
