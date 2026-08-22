@@ -38,6 +38,7 @@ apk add \
     bridge-utils \
     chrony \
     dropbear \
+    openssh-sftp-server \
     dbus \
     e2fsprogs-extra \
     eudev \
