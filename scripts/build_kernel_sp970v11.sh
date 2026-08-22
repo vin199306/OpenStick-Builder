@@ -44,7 +44,9 @@ rm -rf /tmp/empty-ramdisk
 mkdir -p /tmp/empty-ramdisk
 ( cd /tmp/empty-ramdisk && find . | cpio -o -H newc > "${OUT_DIR}/ramdisk.img" 2>/dev/null )
 
-mkbootimg \
+# pack boot.img with the bundled packer (the Ubuntu mkbootimg package is
+# broken on Noble: it imports the missing `gki` module and crashes)
+python3 "$(pwd)/../scripts/mkbootimg_sp970.py" \
     --kernel "${OUT_DIR}/Image.gz-dtb" \
     --ramdisk "${OUT_DIR}/ramdisk.img" \
     --pagesize 2048 \

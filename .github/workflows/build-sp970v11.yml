@@ -29,7 +29,7 @@ jobs:
           sudo sh -e scripts/install_deps.sh
           sudo apt-get install -y \
             build-essential libncurses-dev libssl-dev bc flex bison \
-            mkbootimg cpio
+            cpio
 
       - name: Extract MSM8916 firmware
         run: sudo sh -e scripts/extract_fw.sh
