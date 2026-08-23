@@ -110,6 +110,49 @@ echo 'user ALL=(ALL:ALL) NOPASSWD: ALL' > ${CHROOT}/etc/sudoers.d/user
 # root password
 chroot ${CHROOT} ash -l -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
 
+# reboot bootloader / reboot edl support
+# busybox reboot cannot pass a restart reason to the bootloader, so compile a
+# small static helper that calls reboot(RB_AUTOBOOT, "bootloader"|"edl") and
+# install a /usr/local/bin/reboot wrapper (takes PATH precedence over /sbin/reboot)
+cat << 'CEOF' > ${CHROOT}/tmp/reboot-ctrl.c
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <linux/reboot.h>
+#include <string.h>
+#include <stdio.h>
+int main(int argc, char **argv) {
+    const char *mode = (argc > 1) ? argv[1] : "bootloader";
+    if (strcmp(mode, "bootloader") != 0 && strcmp(mode, "edl") != 0) {
+        fprintf(stderr, "usage: reboot-ctrl bootloader|edl\n");
+        return 1;
+    }
+    sync();
+    syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
+            LINUX_REBOOT_CMD_RESTART2, mode);
+    return 0;
+}
+CEOF
+
+chroot ${CHROOT} ash -l -c "
+apk add --allow-untrusted build-base
+gcc -O2 -static -o /usr/local/bin/reboot-ctrl /tmp/reboot-ctrl.c
+rm -f /tmp/reboot-ctrl.c
+apk del build-base
+"
+
+cat << 'EOF' > ${CHROOT}/usr/local/bin/reboot
+#!/bin/sh
+case "$1" in
+    bootloader|edl)
+        exec /usr/local/bin/reboot-ctrl "$1"
+        ;;
+    *)
+        exec /sbin/reboot "$@"
+        ;;
+esac
+EOF
+chmod +x ${CHROOT}/usr/local/bin/reboot
+
 # configure chrony with domestic NTP servers (device clock resets to 1970 without RTC,
 # causing TLS cert verification failures; default config already has makestep 1.0 3 + rtcsync)
 sed -i 's|^pool pool.ntp.org iburst|server ntp.aliyun.com iburst\nserver ntp.tencent.com iburst\nserver cn.pool.ntp.org iburst|' ${CHROOT}/etc/chrony/chrony.conf
