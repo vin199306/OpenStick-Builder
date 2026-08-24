@@ -56,6 +56,18 @@ apk add \
     wireless-regdb \
     iw
 
+# modem runtime libraries (the ModemManager binary itself comes from the
+# build/modem-stage.tar.gz built by scripts/build_modem_host.sh)
+apk add \
+    libqmi \
+    libqmi-utils \
+    libmbim \
+    libmbim-utils \
+    libgudev \
+    libqrtr-glib \
+    qrtr \
+    polkit
+
 # clear
 rm /etc/fstab
 "
@@ -111,35 +123,10 @@ echo 'user ALL=(ALL:ALL) NOPASSWD: ALL' > ${CHROOT}/etc/sudoers.d/user
 chroot ${CHROOT} ash -l -c "echo 'root:${ROOT_PASSWORD}' | chpasswd"
 
 # reboot bootloader / reboot edl support
-# busybox reboot cannot pass a restart reason to the bootloader, so compile a
-# small static helper that calls reboot(RB_AUTOBOOT, "bootloader"|"edl") and
-# install a /usr/local/bin/reboot wrapper (takes PATH precedence over /sbin/reboot)
-cat << 'CEOF' > ${CHROOT}/tmp/reboot-ctrl.c
-#include <unistd.h>
-#include <sys/syscall.h>
-#include <linux/reboot.h>
-#include <string.h>
-#include <stdio.h>
-int main(int argc, char **argv) {
-    const char *mode = (argc > 1) ? argv[1] : "bootloader";
-    if (strcmp(mode, "bootloader") != 0 && strcmp(mode, "edl") != 0) {
-        fprintf(stderr, "usage: reboot-ctrl bootloader|edl\n");
-        return 1;
-    }
-    sync();
-    syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
-            LINUX_REBOOT_CMD_RESTART2, mode);
-    return 0;
-}
-CEOF
-
-chroot ${CHROOT} ash -l -c "
-apk add --allow-untrusted build-base
-gcc -O2 -static -o /usr/local/bin/reboot-ctrl /tmp/reboot-ctrl.c
-rm -f /tmp/reboot-ctrl.c
-apk del build-base
-"
-
+# busybox reboot cannot pass a restart reason to the bootloader. The static
+# reboot-ctrl helper is built on the BUILD HOST by scripts/build_modem_host.sh
+# (into build/modem-stage.tar.gz) and shipped in the stage; only the /sbin/reboot
+# PATH-precedence wrapper is created here.
 cat << 'EOF' > ${CHROOT}/usr/local/bin/reboot
 #!/bin/sh
 case "$1" in
@@ -197,6 +184,15 @@ chroot ${CHROOT} ash -l -c "depmod -a ${KVER}"
 printf 'qcom_wcnss_pil\n'  > ${CHROOT}/etc/modules-load.d/wcnss.conf
 printf 'cpufreq_ondemand\n' > ${CHROOT}/etc/modules-load.d/cpufreq.conf
 
+# kernel module autoload: MSM8916 modem stack (QRTR core is built into the
+# kernel; load the QMI ctrl port, data path and modem remoteproc driver)
+printf 'rpmsg_wwan_ctrl\n' > ${CHROOT}/etc/modules-load.d/modem.conf
+printf 'qcom_bam_dmux\n'   >> ${CHROOT}/etc/modules-load.d/modem.conf
+printf 'qcom_common\n'     >> ${CHROOT}/etc/modules-load.d/modem.conf
+printf 'qcom_pil_info\n'   >> ${CHROOT}/etc/modules-load.d/modem.conf
+printf 'qcom_q6v5\n'       >> ${CHROOT}/etc/modules-load.d/modem.conf
+printf 'qcom_q6v5_mss\n'   >> ${CHROOT}/etc/modules-load.d/modem.conf
+
 # first boot: resize rootfs to fill the partition
 mkdir -p ${CHROOT}/etc/local.d
 cat << 'EOF' > ${CHROOT}/etc/local.d/resize-rootfs.start
@@ -216,12 +212,143 @@ echo 4 > /sys/devices/system/cpu/cpufreq/ondemand/sampling_down_factor
 EOF
 chmod +x ${CHROOT}/etc/local.d/cpufreq.start
 
-# pre-generate dropbear host keys
-mkdir -p ${CHROOT}/etc/dropbear
+# install the modem stack: ModemManager (patched), qrtr-ns and reboot-ctrl are
+# built on the BUILD HOST by scripts/build_modem_host.sh (into
+# build/modem-stage.tar.gz), so nothing here compiles inside the image chroot.
+if [ ! -f build/modem-stage.tar.gz ]; then
+    echo "error: build/modem-stage.tar.gz missing - run scripts/build_modem_host.sh first" >&2
+    exit 1
+fi
+tar -xzf build/modem-stage.tar.gz -C ${CHROOT}
+
+# sim-init.sh: plain POSIX sh (ash) - activate the GW provisioning session so
+# the USIM app becomes 'ready' (qmicli, from libqmi-utils, is the only tool)
+cat > ${CHROOT}/usr/local/bin/sim-init.sh << 'SHEEOF'
+#!/bin/sh
+# Activate the primary GW provisioning session so the USIM app becomes 'ready'.
+# Some firmware (e.g. MSM8916 SP970) does not auto-activate it, leaving the USIM
+# in 'detected' state which ModemManager treats as "SIM not ready".
+
+QMI_PORT=/dev/wwan0qmi0
+
+# wait for the QMI control port
+i=0
+while [ "$i" -lt 30 ]; do
+    [ -e "$QMI_PORT" ] && break
+    sleep 1
+    i=$((i+1))
+done
+[ -e "$QMI_PORT" ] || { echo "sim-init: $QMI_PORT not found"; exit 1; }
+
+# wait for the QMI service to be responsive
+i=0
+while [ "$i" -lt 15 ]; do
+    if qmicli -d "$QMI_PORT" --dms-get-ids >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+    i=$((i+1))
+done
+if ! qmicli -d "$QMI_PORT" --dms-get-ids >/dev/null 2>&1; then
+    echo "sim-init: QMI service not responsive"
+    exit 1
+fi
+
+# skip if a primary GW provisioning session already exists
+out=$(qmicli -d "$QMI_PORT" --uim-get-card-status 2>&1) || true
+case "$out" in
+    *"Primary GW:"*)
+        case "$out" in
+            *"session doesn't exist"*) ;;
+            *) echo "sim-init: provisioning session already active"; exit 0 ;;
+        esac ;;
+esac
+
+# determine the USIM AID from the card status output
+aid=$(printf '%s\n' "$out" | awk '
+    /Application type:/ { want = (tolower($0) ~ /(usim|sim)/) ? 1 : 0; next }
+    want && /Application ID:/ {
+        v = $0; sub(/^.*Application ID:[[:space:]]*/, "", v)
+        if (v ~ /^[0-9A-Fa-f][0-9A-Fa-f](:[0-9A-Fa-f][0-9A-Fa-f])+/) { print v; exit }
+        getline; sub(/^[[:space:]]*/, "")
+        if ($0 ~ /^[0-9A-Fa-f][0-9A-Fa-f](:[0-9A-Fa-f][0-9A-Fa-f])+/) { print $0; exit }
+    }
+')
+if [ -z "$aid" ]; then
+    echo "sim-init: could not determine USIM AID"
+    exit 1
+fi
+
+echo "sim-init: activating provisioning session with AID $aid"
+if ! qmicli -d "$QMI_PORT" \
+    --uim-change-provisioning-session \
+    "session-type=primary-gw-provisioning,activate=yes,slot=1,aid=$aid" >/dev/null 2>&1; then
+    echo "sim-init: provisioning session activation failed"
+    exit 1
+fi
+
+sleep 2
+out=$(qmicli -d "$QMI_PORT" --uim-get-card-status 2>&1) || true
+case "$out" in
+    *"ready"*) echo "sim-init: USIM ready" ;;
+    *) echo "sim-init: activated but USIM not ready yet" ;;
+esac
+exit 0
+SHEEOF
+chmod +x ${CHROOT}/usr/local/bin/sim-init.sh
+
+# OpenRC services: qrtr-ns (QRTR name service), sim-init (GW provisioning), modemmanager
+cat > ${CHROOT}/etc/init.d/qrtr-ns << 'EOF'
+#!/sbin/openrc-run
+description="QRTR name service daemon"
+command="/usr/local/bin/qrtr-ns"
+command_background="yes"
+pidfile="/run/qrtr-ns.pid"
+depend() {
+    need rmtfs
+    after modules
+}
+EOF
+chmod +x ${CHROOT}/etc/init.d/qrtr-ns
+
+cat > ${CHROOT}/etc/init.d/sim-init << 'EOF'
+#!/sbin/openrc-run
+description="Activate USIM GW provisioning session before ModemManager"
+command="/usr/local/bin/sim-init.sh"
+depend() {
+    need rmtfs qrtr-ns
+}
+EOF
+chmod +x ${CHROOT}/etc/init.d/sim-init
+
+cat > ${CHROOT}/etc/init.d/modemmanager << 'EOF'
+#!/sbin/openrc-run
+description="ModemManager mobile broadband management daemon"
+command="/usr/sbin/ModemManager"
+command_background="yes"
+command_user="root"
+pidfile="/run/ModemManager.pid"
+depend() {
+    need rmtfs qrtr-ns
+    want sim-init
+    after dbus
+}
+EOF
+chmod +x ${CHROOT}/etc/init.d/modemmanager
+
+# ModemManager does not self-daemonize, so OpenRC backgrounds it above. The
+# stage's DBus service file would also let DBus auto-spawn a second instance
+# (service-name conflict) - disable it.
+MM_DBUS=${CHROOT}/usr/share/dbus-1/system-services/org.freedesktop.ModemManager1.service
+if [ -f "${MM_DBUS}" ]; then
+    mv "${MM_DBUS}" "${MM_DBUS}.disabled"
+fi
+
+# register modem services for auto-start at boot
 chroot ${CHROOT} ash -l -c "
-dropbearkey -t rsa -s 2048 -f /etc/dropbear/dropbear_rsa_host_key
-dropbearkey -t ecdsa -s 256 -f /etc/dropbear/dropbear_ecdsa_host_key
-dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key
+rc-update add qrtr-ns default
+rc-update add sim-init default
+rc-update add modemmanager default
 "
 
 # backup rootfs

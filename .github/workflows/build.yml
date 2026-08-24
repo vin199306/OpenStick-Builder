@@ -16,6 +16,9 @@ jobs:
       - name: Install dependencies
         run: sudo sh -e scripts/install_deps.sh
 
+      - name: Build modem stage
+        run: sudo sh -e scripts/build_modem_host.sh
+
       - name: Create rootfs
         run: sudo sh -e scripts/alpine_rootfs.sh
 
