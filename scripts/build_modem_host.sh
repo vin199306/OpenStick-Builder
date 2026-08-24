@@ -74,7 +74,11 @@ meson setup build \
 ninja -C build -j2
 DESTDIR=/stage ninja -C build install
 
-# qrtr-ns (reference daemon; Alpine's qrtr package ships none)
+# qrtr-ns (reference daemon; Alpine's qrtr package ships none). The MM ninja
+# install does not create /stage/usr/local/bin so create it here for qrtr-ns
+# and reboot-ctrl below.
+mkdir -p /stage/usr/local/bin
+
 cd /tmp
 tar -xzf /tmp/qrtr-v1.2.tar.gz
 cd /tmp/qrtr-1.2
