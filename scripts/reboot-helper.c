@@ -4,12 +4,25 @@
  * driver via the reboot(2) syscall using LINUX_REBOOT_CMD_RESTART2 with a
  * mode string. Mainline kernels use the reboot-mode sysfs instead. This
  * helper tries both, falling back to a plain reboot.
+ *
+ * The raw syscall is used because libc reboot() wrappers differ: glibc on
+ * some systems only declares reboot(int), which cannot pass the mode.
  */
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/reboot.h>
+#include <sys/syscall.h>
 #include <linux/reboot.h>
+
+static void do_reboot(const char *mode)
+{
+	if (mode)
+		syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
+			LINUX_REBOOT_CMD_RESTART2, mode);
+	else
+		syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
+			LINUX_REBOOT_CMD_RESTART, NULL);
+}
 
 static void set_reboot_mode(const char *mode)
 {
@@ -34,7 +47,7 @@ static void set_reboot_mode(const char *mode)
 		}
 	}
 	/* vendor kernel: pass the reboot reason via reboot(2) RESTART2 */
-	reboot(LINUX_REBOOT_CMD_RESTART2, mode);
+	do_reboot(mode);
 }
 
 int main(int argc, char **argv)
@@ -49,6 +62,6 @@ int main(int argc, char **argv)
 	}
 	if (mode)
 		set_reboot_mode(mode);
-	reboot(RB_AUTOBOOT);
+	do_reboot(NULL);
 	return 0;
 }
