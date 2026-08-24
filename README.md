@@ -103,7 +103,7 @@ Edit [`scripts/alpine_rootfs.sh`](scripts/alpine_rootfs.sh#L33) to add/remove pa
   fastboot flash sbl1 sbl1.mbn
   fastboot flash tz tz.mbn
   fastboot flash boot boot.bin
-  fastboot flash rootfs alpine_rootfs.bin
+  fastboot flash rootfs rootfs.img
   ```
 - Restore original partitions
   ```shell
