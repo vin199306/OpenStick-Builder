@@ -181,9 +181,8 @@ cp dtbs/* ${CHROOT}/boot/dtbs/qcom
 cp -a configs/templates ${CHROOT}/etc/gt
 cp scripts/setup_ncm_gadget.sh ${CHROOT}/usr/local/bin
 
-# install reboot wrapper (reboot bootloader / reboot edl)
-cp scripts/reboot-wrapper.sh ${CHROOT}/usr/local/bin/reboot
-chmod +x ${CHROOT}/usr/local/bin/reboot
+# compile and install reboot helper (reboot bootloader / reboot edl)
+aarch64-linux-gnu-gcc -static -O2 -o ${CHROOT}/usr/local/bin/reboot scripts/reboot-helper.c
 
 # cleanup to reduce rootfs size
 rm -rf ${CHROOT}/var/cache/apk/*

@@ -136,7 +136,7 @@ Edit [`scripts/alpine_rootfs.sh`](scripts/alpine_rootfs.sh#L33) to add/remove pa
   | username | root |
   | password | password |
 
-- Reboot modes (via the reboot wrapper)
+- Reboot modes (via the compiled reboot helper)
   ```shell
   reboot bootloader   # reboot into fastboot mode
   reboot edl          # reboot into EDL mode
