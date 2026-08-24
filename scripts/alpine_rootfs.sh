@@ -181,6 +181,17 @@ cp dtbs/* ${CHROOT}/boot/dtbs/qcom
 cp -a configs/templates ${CHROOT}/etc/gt
 cp scripts/setup_ncm_gadget.sh ${CHROOT}/usr/local/bin
 
+# install reboot wrapper (reboot bootloader / reboot edl)
+cp scripts/reboot-wrapper.sh ${CHROOT}/usr/local/bin/reboot
+chmod +x ${CHROOT}/usr/local/bin/reboot
+
+# cleanup to reduce rootfs size
+rm -rf ${CHROOT}/var/cache/apk/*
+rm -rf ${CHROOT}/var/log/*
+rm -rf ${CHROOT}/tmp/*
+rm -rf ${CHROOT}/root/.cache
+rm -f ${CHROOT}/root/.ash_history
+
 # backup rootfs
 rm -f alpine_rootfs.tgz
 tar cpzf alpine_rootfs.tgz \

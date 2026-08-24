@@ -136,6 +136,12 @@ Edit [`scripts/alpine_rootfs.sh`](scripts/alpine_rootfs.sh#L33) to add/remove pa
   | username | root |
   | password | password |
 
+- Reboot modes (via the reboot wrapper)
+  ```shell
+  reboot bootloader   # reboot into fastboot mode
+  reboot edl          # reboot into EDL mode
+  ```
+
 - This build is adapted for the **SP970** device (MSM8916). The kernel modules and WiFi firmware are extracted from the stock Debian rootfs and placed under `prebuilt/sp970/`. The `boot.img` is provided by the stock flashing package and must **not** be rebuilt.
 
 - To maximize the `rootfs` partition
