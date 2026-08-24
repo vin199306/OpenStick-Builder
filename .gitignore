@@ -1,0 +1,15 @@
+*.raw
+*.bin
+*.zip
+*.mbn
+*.tgz
+build
+dist
+files
+mnt
+rootfs
+apk.static
+
+# keep prebuilt firmware in the repo
+!prebuilt/
+!prebuilt/**

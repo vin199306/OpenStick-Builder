@@ -1,0 +1,7 @@
+<?xml version="1.0" ?>
+<data>
+  <program SECTOR_SIZE_IN_BYTES="512" file_sector_offset="0" filename="" label="modem" num_partition_sectors="131072" start_byte_hex="0x0004000000" start_sector="131072"/>
+  <program SECTOR_SIZE_IN_BYTES="512" file_sector_offset="0" filename="modemst1" label="modemst1" num_partition_sectors="3072" start_byte_hex="0x0008700000" start_sector="276480"/>
+  <program SECTOR_SIZE_IN_BYTES="512" file_sector_offset="0" filename="modemst2" label="modemst2" num_partition_sectors="3072" start_byte_hex="0x0008880000" start_sector="279552"/>
+  <program SECTOR_SIZE_IN_BYTES="512" file_sector_offset="0" filename="fsg" label="fsg" num_partition_sectors="3072" start_byte_hex="0x000C008000" start_sector="393280"/>
+</data>

@@ -1,0 +1,43 @@
+name: Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        run: sudo sh -e scripts/install_deps.sh
+
+      - name: Extract MSM8916 firmware
+        run: sudo sh -e scripts/extract_fw.sh
+
+      - name: Create rootfs
+        run: sudo sh -e scripts/alpine_rootfs.sh
+
+      - name: Create images
+        run: sudo sh -e scripts/build_images.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sp970
+          path: files/*
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: files/*
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          draft: false
+          prerelease: false

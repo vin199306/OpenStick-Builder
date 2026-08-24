@@ -1,0 +1,28 @@
+* text=auto
+
+# shell scripts and configs must use LF (critical for Linux CI)
+*.sh text eol=lf
+*.conf text eol=lf
+*.nmconnection text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.mk text eol=lf
+*.py text eol=lf
+
+# ssh host keys must keep LF
+prebuilt/**/ssh/* text eol=lf
+
+# kernel module metadata
+prebuilt/**/lib/modules/** text eol=lf
+
+# firmware binaries must not be altered
+*.bin binary
+*.mbn binary
+*.img binary
+*.dtb binary
+*.ko binary
+*.tgz binary
+*.raw binary
